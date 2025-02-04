@@ -1,0 +1,1528 @@
+esphome:
+  name: "genvex-controller"
+  friendly_name: genvex_controller
+  build_path: "../config/esphome/genvex_controller_build"
+
+
+esp32:
+  board: esp32dev
+
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API
+api:
+  encryption:
+    key: "="
+
+ota:
+  - platform: esphome
+    password: "9eb1b5dc58e2df335932591231238d5"
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: "Genvex-Controller"
+    password: "HWKdqnN78F49"
+
+substitutions:
+  device_description: "Heat Recovery Ventilation System Control"
+
+# Enable UART Communication
+uart:
+  id: uart_1
+  tx_pin: GPIO17  # Replace with your TX pin
+  rx_pin: GPIO16  # Replace with your RX pin
+  baud_rate: 19200
+
+# Define Global Variables to Store Received Bytes
+globals:
+  - id: control_level_num
+    type: uint8_t
+    restore_value: true
+    initial_value: '1'
+
+  # Variables to store received bytes for later calculations
+  - id: inlet_air_x
+    type: uint8_t
+    restore_value: true
+    initial_value: '0'
+  - id: outlet_air_x
+    type: uint8_t
+    restore_value: true
+    initial_value: '0'
+  - id: exhaust_air_x
+    type: uint8_t
+    restore_value: true
+    initial_value: '0'
+  - id: supply_air_x
+    type: uint8_t
+    restore_value: true
+    initial_value: '0'
+  
+  # Variables to store calculated results
+  - id: inlet_air_result
+    type: float
+    restore_value: true
+    initial_value: '0'
+  - id: outlet_air_result
+    type: float
+    restore_value: true
+    initial_value: '0'
+  - id: exhaust_air_result
+    type: float
+    restore_value: true
+    initial_value: '0'
+  - id: supply_air_result
+    type: float
+    restore_value: true
+    initial_value: '0'
+
+
+# Definitions of sensors
+sensor:
+  - platform: uptime
+    name: controller uptime
+
+  - platform: wifi_signal # Reports the WiFi signal strength/RSSI in dB
+    name: "WiFi Signal dB"
+    id: wifi_signal_db
+    update_interval: 60s
+    entity_category: "diagnostic"
+
+  - platform: template
+    name: "Inlet Air Temperature"
+    device_class: temperature
+    id: inlet_air_temperature
+    unit_of_measurement: "°C"
+
+  - platform: template
+    name: "Outlet Air Temperature"
+    device_class: temperature
+    id: outlet_air_temperature
+    unit_of_measurement: "°C"
+
+  - platform: template
+    name: "Exhaust Air Temperature"
+    device_class: temperature
+    id: exhaust_air_temperature
+    unit_of_measurement: "°C"
+
+  - platform: template
+    name: "Supply Air Temperature"
+    device_class: temperature
+    id: supply_air_temperature
+    unit_of_measurement: "°C"
+
+  - platform: template
+    name: "Internal Temperature Delta"
+    device_class: temperature
+    id: internal_temperature_delta
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    lambda: |-
+      return id(exhaust_air_result) - id(supply_air_result);
+    update_interval: 60s
+
+  - platform: template
+    name: "External Temperature Delta"
+    device_class: temperature
+    id: external_temperature_delta
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    lambda: |-
+      return id(inlet_air_result) - id(outlet_air_result);
+    update_interval: 60s
+
+  - platform: template
+    name: "Inlet Fan Speed"
+    icon: "mdi:fan"
+    id: inlet_fan_speed_sensor
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+
+  - platform: template
+    name: "Outlet Fan Speed"
+    icon: "mdi:fan"
+    id: outlet_fan_speed_sensor
+    unit_of_measurement: "%"
+    accuracy_decimals: 0
+
+  - platform: template
+    name: "Level"
+    id: level_sensor
+    accuracy_decimals: 0
+    icon: "mdi:fan"
+
+
+number:
+- platform: template
+  name: Level 1 supply
+  icon: "mdi:fan-speed-1"
+  unit_of_measurement: "%"
+  id: genvex_speed_in_1
+  entity_category: config
+  min_value: 15
+  max_value: 45
+  step: 1
+  mode: box
+  optimistic: true
+  restore_value: true
+  
+- platform: template
+  name: Level 1 extract
+  icon: "mdi:fan-speed-1"
+  unit_of_measurement: "%"
+  id: genvex_speed_out_1
+  entity_category: config
+  min_value: 15
+  max_value: 45
+  step: 1
+  mode: box
+  optimistic: true
+  restore_value: true
+
+- platform: template
+  name: Level 2 supply
+  icon: "mdi:fan-speed-2"
+  unit_of_measurement: "%"
+  id: genvex_speed_in_2
+  entity_category: config
+  min_value: 35
+  max_value: 75
+  step: 1
+  mode: box
+  optimistic: true
+  restore_value: true
+
+- platform: template
+  name: Level 2 extract
+  icon: "mdi:fan-speed-2"
+  unit_of_measurement: "%"
+  id: genvex_speed_out_2
+  entity_category: config
+  min_value: 35
+  max_value: 75
+  step: 1
+  mode: box
+  optimistic: true
+  restore_value: true
+
+- platform: template
+  name: Level 3 supply
+  icon: "mdi:fan-speed-3"
+  unit_of_measurement: "%"
+  id: genvex_speed_in_3
+  entity_category: config
+  min_value: 60
+  max_value: 99
+  step: 1
+  mode: box
+  optimistic: true
+  restore_value: true
+
+- platform: template
+  name: Level 3 extract
+  icon: "mdi:fan-speed-3"
+  unit_of_measurement: "%"
+  id: genvex_speed_out_3
+  entity_category: config
+  min_value: 60
+  max_value: 99
+  step: 1
+  mode: box
+  optimistic: true
+  restore_value: true
+
+select:
+- platform: template
+  name: Control level
+  icon: "mdi:fan"
+  id: genvex_control_level
+  optimistic: true
+  restore_value: true
+  options:
+    - "Low"
+    - "Medium"
+    - "High"
+    - "Off"
+  set_action:
+    then:
+      - lambda: |-
+          if (x == "Low")
+          {
+            id(control_level_num) = 1; // Action for Low
+          } else if (x == "Medium")
+          {
+            id(control_level_num) = 2; // Action for Medium
+          } else if (x == "High")
+          {
+            id(control_level_num) = 3; // Action for High
+          } else if (x == "Off")
+          {
+            id(control_level_num) = 4; // Action for Off
+          }
+
+
+
+# Interval for sending UART Data and Processing Received Bytes
+interval:
+  - interval: 10ms  # Poll UART data frequently
+    then:
+      - lambda: |-
+          enum State {
+            CMD_255,  // Supply temp upper byte
+            CMD_254,  // Supply temp lower byte
+            CMD_253,  // Inlet temp upper byte
+            CMD_252,  // Inlet temp lower byte
+            CMD_251,  // Outlet temp upper byte
+            CMD_250,  // Outlet temp lower byte
+            CMD_249,  // Exhaust temp upper byte
+            CMD_248,  // Exhaust temp lower byte
+
+
+            CMD_221,  // In fan speed 1
+            CMD_220,  // In fan speed 2
+            CMD_219,  // In fan speed 3
+            CMD_218,  // Out fan speed 1
+            CMD_217,  // Out fan speed 2
+            CMD_216,  // Out fan speed 3
+
+            CMD_174,  // Level
+            CMD_173,  // Level
+
+            CMD_165,  // Inlet fan speed
+            CMD_164,  // Outlet fan speed
+
+            CMD_DELAY1, // Used to slow down the control loop
+            CMD_DELAY2  // Used to slow down the control loop
+          };
+
+          enum InState {
+            SEND_CMD,
+            WAIT_FOR_RESPONSE,
+            SEND_ACK,
+            DELAY
+          };
+
+          static State   current_state    = CMD_255;  // Initialize to first state
+          static InState current_in_state = SEND_CMD; // Initialize to first state
+
+          static uint8_t received_count = 0;          // Count of received bytes
+          static uint8_t last_received_byte1 = 0;
+          static uint8_t last_received_byte2 = 0;
+
+          static uint16_t delay_count      = 0;  // Count of delay cycles
+          static uint16_t in_state_counter = 0;  // tracks time in each state (restart loop if too long)
+          static State   state_last       = CMD_255;  // Initialize to first state
+
+          static uint8_t data_byte = 0;   // Data byte to send
+
+
+          // Keep track of time in each state, to avoid getting stuck
+          if (current_state != state_last)
+          {
+            state_last = current_state;
+            in_state_counter = 0;
+          }
+          else
+          {
+            in_state_counter++;
+          }
+
+          if (in_state_counter >= 700)  // Restart loop if too long
+          {
+            ESP_LOGD("uart", "Statemachione stuck, current state: 0x%02X, current_in_state: 0x%02X", current_state, current_in_state);
+            ESP_LOGD("uart", "Resets statemachine...");
+            in_state_counter = 0;
+            current_state = CMD_255;
+            current_in_state = SEND_CMD;
+          }
+
+
+          // Run loop/statemachine
+          switch (current_state) 
+          {
+            case CMD_255:   // Supply temp upper byte
+            {            
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  id(uart_1).write_byte(1);  // always 1 when get data, else set data
+                  id(uart_1).write_byte(1);  // CMD_255 -> 256 - 255 = 1
+                  //ESP_LOGD("uart_tx", "Sent CMD_255: 0x01 0x01");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    id(supply_air_x) = last_received_byte2;
+                    ESP_LOGD("uart", "Supply Air X: %d", id(supply_air_x));
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  // no ACK for this command
+                  current_in_state = DELAY;        // Move to delay state
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;              // Reset counter for next set
+                    current_in_state = SEND_CMD;  // Go back to sending command
+                    current_state = CMD_254;      // Move to the next state
+                  }
+                  break;
+
+                default:
+                  break;
+              }
+            }
+            break;
+
+            case CMD_254:   // Supply temp lower byte
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  id(uart_1).write_byte(1);  // always 1 when get data, else set data
+                  id(uart_1).write_byte(2);  // CMD_254 -> 256 - 254 = 2
+                  //ESP_LOGD("uart_tx", "Sent CMD_254: 0x01 0x02");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    int supply_x = id(supply_air_x);
+                    int supply_y = last_received_byte2;
+                    float supply_temperature = ((supply_y + (supply_x - 1) * 256) - 44) / 10.0;
+                    id(supply_air_result) = supply_temperature;
+                    id(supply_air_temperature).publish_state(supply_temperature);
+                    ESP_LOGD("uart", "Supply Air Temperature: %.1f °C", supply_temperature);
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  // no ACK for this command
+                  current_in_state = DELAY;        // Move to delay state
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;              // Reset counter for next set
+                    current_in_state = SEND_CMD;  // Go back to sending command
+                    current_state = CMD_253;      // Move to the next state
+                  }
+                  break;
+
+                default:
+                  break;
+              }
+            }
+            break;
+
+            case CMD_253:   // Inlet temp upper byte
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  id(uart_1).write_byte(1);  // always 1 when get data, else set data
+                  id(uart_1).write_byte(3);  // CMD_253 -> 256 - 253 = 3
+                  //ESP_LOGD("uart_tx", "Sent CMD_253: 0x01 0x03");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    id(inlet_air_x) = last_received_byte2;
+                    ESP_LOGD("uart", "Inlet Air X: %d", id(inlet_air_x));
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  // no ACK for this command
+                  current_in_state = DELAY;        // Move to delay state
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;              // Reset counter for next set
+                    current_in_state = SEND_CMD;  // Go back to sending command
+                    current_state = CMD_252;      // Move to the next state
+                  }
+                  break;
+
+                default:
+                  break;
+              }
+            }
+            break;
+
+            case CMD_252:   // Inlet temp lower byte
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  id(uart_1).write_byte(1);  // always 1 when get data, else set data
+                  id(uart_1).write_byte(4);  // CMD_252 -> 256 - 252 = 4
+                  //ESP_LOGD("uart_tx", "Sent CMD_252: 0x01 0x04");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    int inlet_x = id(inlet_air_x);
+                    int inlet_y = last_received_byte2;
+                    float inlet_temperature = ((inlet_y + (inlet_x - 1) * 256) - 44) / 10.0;
+                    id(inlet_air_result) = inlet_temperature;
+                    id(inlet_air_temperature).publish_state(inlet_temperature);
+                    ESP_LOGD("uart", "Inlet Air Temperature: %.1f °C", inlet_temperature);
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  // no ACK for this command
+                  current_in_state = DELAY;        // Move to delay state
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;              // Reset counter for next set
+                    current_in_state = SEND_CMD;  // Go back to sending command
+                    current_state = CMD_251;      // Move to the next state
+                  }
+                  break;
+              }
+            }
+            break;
+
+            case CMD_251:  // Outlet temp upper byte
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  id(uart_1).write_byte(1);  // always 1 when get data, else set data
+                  id(uart_1).write_byte(5);  // CMD_251 -> 256 - 251 = 5
+                  //ESP_LOGD("uart_tx", "Sent CMD_251: 0x01 0x05");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    id(outlet_air_x) = last_received_byte2;
+                    ESP_LOGD("uart", "Outlet Air X: %d", id(outlet_air_x));
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  // no ACK for this command
+                  current_in_state = DELAY;        // Move to delay state
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;              // Reset counter for next set
+                    current_in_state = SEND_CMD;  // Go back to sending command
+                    current_state = CMD_250;      // Move to the next state
+                  }
+                  break;
+              }
+            }
+            break;
+
+            case CMD_250: // Outlet temp lower byte
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  id(uart_1).write_byte(1);  // always 1 when get data, else set data
+                  id(uart_1).write_byte(6);  // CMD_250 -> 256 - 250 = 6
+                  //ESP_LOGD("uart_tx", "Sent CMD_250: 0x01 0x06");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    int outlet_x = id(outlet_air_x);
+                    int outlet_y = last_received_byte2;
+                    float outlet_temperature = ((outlet_y + (outlet_x - 1) * 256) - 44) / 10.0;
+                    id(outlet_air_result) = outlet_temperature;
+                    id(outlet_air_temperature).publish_state(outlet_temperature);
+                    ESP_LOGD("uart", "Outlet Air Temperature: %.1f °C", outlet_temperature);
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  // no ACK for this command
+                  current_in_state = DELAY;        // Move to delay state
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;                 // Reset counter for next set
+                    current_in_state = SEND_CMD;     // Go back to sending command
+                    current_state = CMD_249;         // Move to the next state
+                  }
+                  break;
+              }
+            }
+            break;
+
+            case CMD_249: // Exhaust temp upper byte
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  id(uart_1).write_byte(1);  // always 1 when get data, else set data
+                  id(uart_1).write_byte(7);  // CMD_249 -> 256 - 249 = 7
+                  //ESP_LOGD("uart_tx", "Sent CMD_249: 0x01 0x07");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    id(exhaust_air_x) = last_received_byte2;
+                    ESP_LOGD("uart", "Exhaust Air X: %d", id(exhaust_air_x));
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  // no ACK for this command
+                  current_in_state = DELAY;        // Move to delay state
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;                 // Reset counter for next set
+                    current_in_state = SEND_CMD;     // Go back to sending command
+                    current_state = CMD_248;         // Move to the next state
+                  }
+                  break;
+              }
+            }
+            break;
+
+            case CMD_248: // Exhaust temp lower byte
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  id(uart_1).write_byte(1);  // always 1 when get data, else set data
+                  id(uart_1).write_byte(8);  // CMD_248 -> 256 - 248 = 8
+                  //ESP_LOGD("uart_tx", "Sent CMD_248: 0x01 0x08");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    int exhaust_x = id(exhaust_air_x);
+                    int exhaust_y = last_received_byte2;
+                    float exhaust_temperature = ((exhaust_y + (exhaust_x - 1) * 256) - 44) / 10.0;
+                    id(exhaust_air_result) = exhaust_temperature;
+                    id(exhaust_air_temperature).publish_state(exhaust_temperature);
+                    ESP_LOGD("uart", "Exhaust Air Temperature: %.1f °C", exhaust_temperature);
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  // no ACK for this command
+                  current_in_state = DELAY;        // Move to delay state
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;                 // Reset counter for next set
+                    current_in_state = SEND_CMD;     // Go back to sending command
+                    current_state = CMD_165;         // Move to the next state
+                  }
+                  break;
+              }
+            }
+            break;
+
+            case CMD_165: // Inlet fan speed
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  id(uart_1).write_byte(1);  // always 1 when get data, else set data
+                  id(uart_1).write_byte(19);  // CMD_165 -> 256 - 165 = 91 -> 19
+                  //ESP_LOGD("uart_tx", "Sent CMD_165: 0x01 0x13");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    int fan_speed = last_received_byte2;
+                    id(inlet_fan_speed_sensor).publish_state(fan_speed);
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  // no ACK for this command
+                  current_in_state = DELAY;        // Move to delay state
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;                 // Reset counter for next set
+                    current_in_state = SEND_CMD;     // Go back to sending command
+                    current_state = CMD_164;         // Move to the next state
+                  }
+                  break;
+              }
+            }
+            break;
+
+            case CMD_164: // Outlet fan speed
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  id(uart_1).write_byte(1);  // always 1 when get data, else set data
+                  id(uart_1).write_byte(20);  // CMD_164 -> 256 - 164 = 92 -> 20
+                  //ESP_LOGD("uart_tx", "Sent CMD_164: 0x01 0x14");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    int fan_speed = last_received_byte2;
+                    id(outlet_fan_speed_sensor).publish_state(fan_speed);
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  // no ACK for this command
+                  current_in_state = DELAY;        // Move to delay state
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;                 // Reset counter for next set
+                    current_in_state = SEND_CMD;     // Go back to sending command
+                    current_state = CMD_221;         // Move to the next state
+                  }
+                  break;
+              }
+            }
+            break;
+
+            case CMD_221: // In fan speed 1
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  data_byte = id(genvex_speed_in_1).state;
+                  id(uart_1).write_byte(19);  // CMD_221 -> 256 - 221 = 35 -> 19
+                  id(uart_1).write_byte(data_byte);  // always 1 when get data, else set data
+                  //ESP_LOGD("uart_tx", "Sent CMD_221: 0x13 0xXX");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    // Nothing to process yet
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  id(uart_1).write_byte(0x02);  // ACK
+                  id(uart_1).write_byte(0x05);  // ACK
+                  //ESP_LOGD("uart_tx", "Sent ACK: 0x02 0x05");
+                  current_in_state = DELAY;  // Go back to sending command
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;                 // Reset counter for next set
+                    current_in_state = SEND_CMD;  // Go back to sending command
+                    current_state = CMD_220;      // Move to the next state
+                  }
+                  break;
+              }
+            }
+            break;
+
+            case CMD_220: // In fan speed 2
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  data_byte = id(genvex_speed_in_2).state;
+                  id(uart_1).write_byte(20);  // CMD_220 -> 256 - 220 = 36 -> 20
+                  id(uart_1).write_byte(data_byte);  // always 1 when get data, else set data
+                  //ESP_LOGD("uart_tx", "Sent CMD_220: 0x14 0xXX");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    // Nothing to process yet
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  id(uart_1).write_byte(0x02);  // ACK
+                  id(uart_1).write_byte(0x05);  // ACK
+                  //ESP_LOGD("uart_tx", "Sent ACK: 0x02 0x05");
+                  current_in_state = DELAY;        // Move to delay state
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;                 // Reset counter for next set
+                    current_in_state = SEND_CMD;     // Go back to sending command
+                    current_state = CMD_219;         // Move to the next state
+                  }
+                  break;
+              }
+            }
+            break;
+
+            case CMD_219: // In fan speed 3
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  data_byte = id(genvex_speed_in_3).state;
+                  id(uart_1).write_byte(21);  // CMD_219 -> 256 - 219 = 37 -> 21
+                  id(uart_1).write_byte(data_byte);  // always 1 when get data, else set data
+                  //ESP_LOGD("uart_tx", "Sent CMD_219: 0x15 0xXX");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    // Nothing to process yet
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  id(uart_1).write_byte(0x02);  // ACK
+                  id(uart_1).write_byte(0x05);  // ACK
+                  //ESP_LOGD("uart_tx", "Sent ACK: 0x02 0x05");
+                  current_in_state = DELAY;        // Move to delay state
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;                 // Reset counter for next set
+                    current_in_state = SEND_CMD;     // Go back to sending command
+                    current_state = CMD_218;         // Move to the next state
+                  }
+                  break;
+              }
+            }
+            break;
+
+            case CMD_218: // Out fan speed 1
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  data_byte = id(genvex_speed_out_1).state;
+                  id(uart_1).write_byte(22);  // CMD_218 -> 256 - 218 = 38 -> 22
+                  id(uart_1).write_byte(data_byte);  // always 1 when get data, else set data
+                  //ESP_LOGD("uart_tx", "Sent CMD_218: 0x16 0xXX");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    // Nothing to process yet
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  id(uart_1).write_byte(0x02);  // ACK
+                  id(uart_1).write_byte(0x05);  // ACK
+                  //ESP_LOGD("uart_tx", "Sent ACK: 0x02 0x05");
+                  current_in_state = DELAY;        // Move to delay state
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;                 // Reset counter for next set
+                    current_in_state = SEND_CMD;     // Go back to sending command
+                    current_state = CMD_217;         // Move to the next state
+                  }
+                  break;
+              }
+            }
+            break;
+
+            case CMD_217: // Out fan speed 2
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  data_byte = id(genvex_speed_out_2).state;
+                  id(uart_1).write_byte(23);  // CMD_217 -> 256 - 217 = 39 -> 23
+                  id(uart_1).write_byte(data_byte);  // always 1 when get data, else set data
+                  //ESP_LOGD("uart_tx", "Sent CMD_217: 0x17 0xXX");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    // Nothing to process yet
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  id(uart_1).write_byte(0x02);  // ACK
+                  id(uart_1).write_byte(0x05);  // ACK
+                  //ESP_LOGD("uart_tx", "Sent ACK: 0x02 0x05");
+                  current_in_state = DELAY;        // Move to delay state
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;                 // Reset counter for next set
+                    current_in_state = SEND_CMD;     // Go back to sending command
+                    current_state = CMD_216;         // Move to the next state
+                  }
+                  break;
+              }
+            }
+            break;
+
+            case CMD_216: // Out fan speed 3
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  data_byte = id(genvex_speed_out_3).state;
+                  id(uart_1).write_byte(24);  // CMD_216 -> 256 - 216 = 40 -> 24
+                  id(uart_1).write_byte(data_byte);  // always 1 when get data, else set data
+                  //ESP_LOGD("uart_tx", "Sent CMD_216: 0x18 0xXX");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    // Nothing to process yet
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  id(uart_1).write_byte(0x02);  // ACK
+                  id(uart_1).write_byte(0x05);  // ACK
+                  //ESP_LOGD("uart_tx", "Sent ACK: 0x02 0x05");
+                  current_in_state = DELAY;        // Move to delay state
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;                 // Reset counter for next set
+                    current_in_state = SEND_CMD;     // Go back to sending command
+                    current_state = CMD_174;         // Move to the next state
+                  }
+                  break;
+              }
+            }
+            break;
+
+            case CMD_174: // Level
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  data_byte = id(control_level_num);
+                  id(uart_1).write_byte(66);  // CMD_174 -> 256 - 174 = 66
+                  id(uart_1).write_byte(data_byte);  // always 1 when get data, else set data
+                  //ESP_LOGD("uart_tx", "Sent CMD_174: 0x42 0xXX");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    id(level_sensor).publish_state(last_received_byte2);
+                    ESP_LOGD("uart", "Level: %d", id(level_sensor).state);
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  id(uart_1).write_byte(0x02);  // ACK
+                  id(uart_1).write_byte(0x05);  // ACK
+                  //ESP_LOGD("uart_tx", "Sent ACK: 0x02 0x05");
+                  current_in_state = DELAY;        // Move to delay state
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;                 // Reset counter for next set
+                    current_in_state = SEND_CMD;     // Move to delay state
+                    current_state = CMD_173;         // Move to the next state
+                  }
+                  break;
+
+              }
+            }
+            break;
+
+            case CMD_173: // Level
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  data_byte = id(control_level_num);
+                  id(uart_1).write_byte(67);  // CMD_173 -> 256 - 173 = 67
+                  id(uart_1).write_byte(data_byte);  // always 1 when get data, else set data
+                  //ESP_LOGD("uart_tx", "Sent CMD_173: 0x43 0xXX");
+                  current_in_state = WAIT_FOR_RESPONSE;
+                  break;
+                case WAIT_FOR_RESPONSE:
+                  // Wait for two bytes to be received
+                  while (id(uart_1).available())
+                  {
+                    uint8_t byte;
+                    if (id(uart_1).read_byte(&byte))
+                    {
+                      if (received_count == 0)
+                      {
+                        last_received_byte1 = byte; // First byte is always the CMD number
+                      }
+                      else if (received_count == 1)
+                      {
+                        last_received_byte2 = byte; // Second byte is the data
+                      }
+                      received_count++;
+                      //ESP_LOGD("uart_rx", "Received byte: 0x%02X", byte);
+                    }
+                  }
+
+                  if (received_count >= 2)
+                  {
+                    //ESP_LOGD("uart_rx", "Received bytes: 0x%02X 0x%02X", last_received_byte1, last_received_byte2);
+                    
+                    // Process the received bytes here
+                    //id(level_sensor).publish_state(last_received_byte2);
+                    //ESP_LOGD("uart", "Level: %d", id(level_sensor));
+
+                    received_count = 0;                 // Reset counter for next set
+                    last_received_byte1 = 0;
+                    last_received_byte2 = 0;
+                    current_in_state = SEND_ACK;        // Move to delay state
+                  }
+                  break;
+                case SEND_ACK:
+                  id(uart_1).write_byte(0x02);  // ACK
+                  id(uart_1).write_byte(0x05);  // ACK
+                  //ESP_LOGD("uart_tx", "Sent ACK: 0x02 0x05");
+                  current_in_state = DELAY;        // Move to delay state
+                  break;
+                case DELAY:
+                  delay_count++;
+                  if (delay_count >= 10)  // Delay for 10 cycles
+                  {
+                    delay_count = 0;                 // Reset counter for next set
+                    current_in_state = SEND_CMD;     // Move to delay state
+                    current_state = CMD_DELAY1;      // Move to the next state
+                  }
+                  break;
+              }
+            }
+            break;
+
+            case CMD_DELAY1: // Delay
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  delay_count++;
+                  if (delay_count >= 500)  // Delay for 500 cycles
+                  {
+                    delay_count = 0;                 // Reset counter for next set
+                    current_in_state = SEND_CMD;     // Move to delay state
+                    current_state = CMD_DELAY2;      // Move to the next state
+                  }
+                  break;
+              }
+            }
+            break;
+
+            case CMD_DELAY2: // Delay
+            {
+              switch (current_in_state)
+              {
+                case SEND_CMD:
+                  delay_count++;
+                  if (delay_count >= 500)  // Delay for 500 cycles
+                  {
+                    delay_count = 0;                 // Reset counter for next set
+                    current_in_state = SEND_CMD;     // Move to delay state
+                    current_state = CMD_255;         // Move to the next state
+                  }
+                  break;
+              }
+            }
+            break;
+
+            default:
+              break; // Do nothing
+          }
