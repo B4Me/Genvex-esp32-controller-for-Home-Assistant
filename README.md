@@ -1,4 +1,4 @@
-# Genvex Controller based on ESPHome Integration for Home Assistant
+# Genvex Controller based on ESPHome for Home Assistant
 
 ## Overview
 
